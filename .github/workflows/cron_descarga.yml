@@ -1,0 +1,24 @@
+name: Robot Descargador de Datos
+
+on:
+  schedule:
+    - cron: '0 0 * * *' # Esto significa: Ejecutar cada noche a las 00:00
+  workflow_dispatch:     # Esto sirve para que puedas darle a un botón de "Play" tú misma
+
+jobs:
+  descarga:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3 # El robot abre tu carpeta
+      - uses: actions/setup-python@v4 # El robot prepara Python
+        with:
+          python-version: '3.9'
+      - run: pip install requests pandas # El robot instala lo que necesita
+      - run: python script_descarga.py    # El robot ejecuta tu código
+      - name: Guardar los cambios
+        run: |
+          git config --global user.name 'Robot-Sonometros'
+          git config --global user.email 'robot@github.com'
+          git add datos_sonometros.csv
+          git commit -m "Datos actualizados automáticamente" || exit 0
+          git push
