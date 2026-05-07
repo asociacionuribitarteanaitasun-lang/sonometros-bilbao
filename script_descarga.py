@@ -3,30 +3,31 @@ import requests
 import ssl
 import os
 
-# 1. Saltarse la verificación de certificados (Crucial para servidores)
+# 1. Saltarse la verificación de certificados
 ssl._create_default_https_context = ssl._create_unverified_context
 
-# 2. La URL de descarga (asegúrate de que sea la correcta del CSV)
 url = "https://www.bilbao.eus/aytoonline/jsp/opendata/movilidad/od_sonometro_mediciones.jsp?idioma=c&formato=csv"
+
+# 2. EL DISFRAZ: Decimos que somos un navegador normal
+headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+}
 
 print("Iniciando descarga de datos...")
 
 try:
-    # 3. Descarga con verificación desactivada
-    response = requests.get(url, verify=False, timeout=60)
+    # 3. Intentamos la descarga con el disfraz y sin verificar SSL
+    response = requests.get(url, headers=headers, verify=False, timeout=60)
     
-    # 4. Guardar el archivo
-    with open("datos_sonometros.csv", "wb") as f:
-        f.write(response.content)
-    
-    print("¡Archivo creado con éxito en el servidor!")
-    
-    # Verificación extra para el log
-    if os.path.exists("datos_sonometros.csv"):
-        print("Confirmado: El archivo existe físicamente.")
+    # Si la respuesta es buena (200), guardamos
+    if response.status_code == 200:
+        with open("datos_sonometros.csv", "wb") as f:
+            f.write(response.content)
+        print("¡Éxito! Archivo creado.")
     else:
-        print("Error: El archivo no se ha creado.")
+        print(f"Error del servidor: Código {response.status_code}")
+        exit(1)
 
 except Exception as e:
-    print(f"Error durante la descarga: {e}")
+    print(f"Error de conexión: {e}")
     exit(1)
