@@ -1,4 +1,5 @@
 import streamlit as st
+from io import StringIO
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
@@ -17,7 +18,7 @@ st.set_page_config(
 # --- CARGA DE DATOS ---
 # Ahora es así de simple:
 try:
-    df = pd.read_csv("datos_sonometros.csv")
+    df = pd.read_csv("datos_sonometros.csv",sep=';')
     st.success("✅ Datos cargados desde el backup automático")
 except:
     st.error("❌ No se encontró el archivo 'datos_sonometros.csv'. Verifica que el Robot haya funcionado.")
