@@ -1,13 +1,25 @@
 import streamlit as st
-from io import StringIO
 import pandas as pd
+import requests
+from io import StringIO
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 import unicodedata
 import os
-import requests
+import ssl
+import urllib3
+
+# --- ARREGLO DE CONEXIÓN PARA OPEN DATA ---
+try:
+    _create_unverified_https_context = ssl._create_unverified_context
+except AttributeError:
+    pass
+else:
+    ssl._create_default_https_context = _create_unverified_https_context
+
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -15,14 +27,6 @@ st.set_page_config(
     page_icon="🔊",
     layout="wide"
 )
-
-# --- CARGA DE DATOS ---
-# Ahora es así de simple:
-try:
-    df = pd.read_csv("datos_sonometros.csv",sep=';')
-    st.success("✅ Datos cargados desde el backup automático")
-except:
-    st.error("❌ No se encontró el archivo 'datos_sonometros.csv'. Verifica que el Robot haya funcionado.")
 
 # --- DICCIONARIO MAESTRO: 32 SENSORES DE ABANDO ---
 SENSORES_ABANDO = {
@@ -53,7 +57,6 @@ COLORES_ESTADO = {
 }
 
 # --- UTILIDADES DE PROCESAMIENTO ---
-
 def limpiar_texto(texto):
     if not isinstance(texto, str): return texto
     texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
@@ -64,12 +67,9 @@ def clasificar_periodo(dt):
     return "DIA" if 7 <= dt.hour < 23 else "NOCHE"
 
 def es_dia_especial(dt):
-    # Fines de semana (Viernes, Sábado, Domingo)
     if dt.weekday() in [4, 5, 6]: return True 
-    # Festivos
     fecha_str = dt.strftime('%Y-%m-%d')
     if fecha_str in FESTIVOS_BILBAO: return True
-    # Vísperas de festivos
     mañana_str = (dt + timedelta(days=1)).strftime('%Y-%m-%d')
     if mañana_str in FESTIVOS_BILBAO: return True
     return False
@@ -84,7 +84,6 @@ def procesar_datos_cache(csv_content):
         df = pd.read_csv(StringIO(csv_content), sep=None, engine='python', encoding='utf-8-sig')
         
     df.columns = [limpiar_texto(c) for c in df.columns]
-    
     c_t = next(c for c in ['FECHA/HORA MEDICION', 'HORA', 'FECHA'] if c in df.columns)
     c_v = next(c for c in ['DECIBELIOS MEDIDOS', 'LAEQ', 'DECIBELIOS'] if c in df.columns)
     c_id = next(c for c in ['CODIGO', 'ID_SONOMETRO', 'ID'] if c in df.columns)
@@ -99,7 +98,6 @@ def procesar_datos_cache(csv_content):
     return df.sort_values('FECHA_DT'), c_id
 
 # --- MOTOR GRÁFICO ---
-
 def aplicar_estetica_ejes(ax, titulo, f_ini, f_fin, ylabel="dB(A)"):
     ax.set_title(titulo, fontsize=10, fontweight='bold', pad=10)
     ax.set_ylabel(ylabel, fontsize=9)
@@ -119,28 +117,23 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
     fig, ax = plt.subplots(figsize=(12, 5))
     df_p = df_sel.sort_values('FECHA_DT')
     sombrear_especiales(ax, f_ini, f_fin)
-
     if not df_p.empty:
         tiempos = df_p['FECHA_DT'].values
         valores = df_p['DECIBELIOS'].values
         periodos = df_p['PERIODO'].values
-
         for i in range(len(tiempos) - 1):
             t1, t2 = tiempos[i], tiempos[i+1]
             v1, v2 = valores[i], valores[i+1]
             p1 = periodos[i]
-            
             diff = (t2 - t1).astype('timedelta64[m]').astype(int)
             if diff <= 20:
                 color = '#e67e22' if p1 == "DIA" else '#2980b9'
                 ax.plot([t1, t2], [v1, v2], color=color, linewidth=1.2, alpha=0.8)
-
     ax.plot([], [], color='#e67e22', label="Nivel Día")
     ax.plot([], [], color='#2980b9', label="Nivel Noche")
     ax.axhline(65, color='red', linestyle='--', linewidth=0.8, alpha=0.5, label="Límite Día (65dB)")
     ax.axhline(55, color='darkblue', linestyle='--', linewidth=0.8, alpha=0.5, label="Límite Noche (55dB)")
-    
-    aplicar_estetica_ejes(ax, "Evolución Acústica 24h (Día: Naranja | Noche: Azul)", f_ini, f_fin)
+    aplicar_estetica_ejes(ax, "Evolución Acústica 24h", f_ini, f_fin)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m %H:%M'))
     ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
     ax.legend(fontsize=8, loc='upper right', ncol=2)
@@ -150,14 +143,11 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
 def generar_grafico_periodo(df_sel, periodo, color, limite, f_ini, f_fin):
     fig, ax = plt.subplots(figsize=(12, 4))
     sombrear_especiales(ax, f_ini, f_fin)
-    
     df_p = df_sel[df_sel['PERIODO'] == periodo].copy().sort_values('FECHA_DT')
-    
     if not df_p.empty:
         tiempos = df_p['FECHA_DT'].values
         valores = df_p['DECIBELIOS'].values
         new_tiempos, new_valores = [tiempos[0]], [valores[0]]
-        
         for i in range(1, len(tiempos)):
             diff = (tiempos[i] - tiempos[i-1]).astype('timedelta64[m]').astype(int)
             if diff > 20:
@@ -166,18 +156,14 @@ def generar_grafico_periodo(df_sel, periodo, color, limite, f_ini, f_fin):
             new_tiempos.append(tiempos[i])
             new_valores.append(valores[i])
         ax.plot(new_tiempos, new_valores, color=color, linewidth=1.5, alpha=0.8, label=f"Nivel {periodo}")
-    
     ax.axhline(limite, color='red', linestyle='--', linewidth=1, alpha=0.7, label=f"Límite {limite}dB")
     aplicar_estetica_ejes(ax, f"Análisis Temporal: Periodo {periodo}", f_ini, f_fin)
-    delta_dias = (f_fin - f_ini).days
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
-    ax.xaxis.set_major_locator(mdates.DayLocator(interval=max(1, delta_dias // 10)))
     ax.legend(fontsize=8, loc='upper right')
     plt.tight_layout()
     return fig
 
 # --- APP PRINCIPAL ---
-
 def main():
     st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
     
@@ -185,36 +171,41 @@ def main():
         st.session_state.df_master = None
         st.session_state.col_id = None
 
+    # --- LÓGICA DE CARGA AUTOMÁTICA ---
+    # Intenta cargar el archivo de GitHub al abrir la app
+    if st.session_state.df_master is None:
+        if os.path.exists("datos_sonometros.csv"):
+            try:
+                with open("datos_sonometros.csv", "r", encoding='utf-8-sig') as f:
+                    content = f.read()
+                    df_p, cid_p = procesar_datos_cache(content)
+                    st.session_state.df_master = df_p
+                    st.session_state.col_id = cid_p
+                st.success("✅ Datos del repositorio cargados correctamente")
+            except:
+                pass
+
     st.sidebar.header("📂 Gestión de Datos")
-    metodo = st.sidebar.radio("Origen:", ["Sincronización Open Data", "Carga Manual (.csv)"])
+    metodo = st.sidebar.radio("Origen:", ["Archivo Automático", "Sincronización Open Data", "Carga Manual (.csv)"])
 
     csv_to_load = None
     if metodo == "Sincronización Open Data":
         if st.sidebar.button("🚀 Sincronizar con Bilbao Cloud"):
             url_target = "https://www.bilbao.eus/aytoonline/jsp/opendata/movilidad/od_sonometro_mediciones.jsp?idioma=c&formato=csv"
-            # Intento de conexión directa ignorando errores de certificado (Seguro para datos públicos)
             try:
                 r = requests.get(url_target, timeout=25, verify=False)
-                if r.status_code == 200 and len(r.text) > 1000:
+                if r.status_code == 200:
                     csv_to_load = r.text
-                else:
-                    # Fallback mediante proxy si la conexión directa es bloqueada
-                    proxy_url = f"https://api.allorigins.win/raw?url={url_target}"
-                    r_proxy = requests.get(proxy_url, timeout=25)
-                    if r_proxy.status_code == 200:
-                        csv_to_load = r_proxy.text
-            except Exception as e:
-                st.sidebar.error("Error de conexión. Intente carga manual.")
-
-    else:
+            except:
+                st.sidebar.error("Error de conexión.")
+    elif metodo == "Carga Manual (.csv)":
         file = st.sidebar.file_uploader("Subir CSV", type=['csv'])
         if file: csv_to_load = file.getvalue().decode("utf-8-sig")
 
     if csv_to_load:
-        with st.spinner('Procesando integridad...'):
-            df_proc, cid = procesar_datos_cache(csv_to_load)
-            st.session_state.df_master = df_proc
-            st.session_state.col_id = cid
+        df_proc, cid = procesar_datos_cache(csv_to_load)
+        st.session_state.df_master = df_proc
+        st.session_state.col_id = cid
 
     if st.session_state.df_master is not None:
         df_all = st.session_state.df_master
@@ -229,6 +220,7 @@ def main():
         f_fin_dt = datetime.combine(f_fin, datetime.max.time())
         df_f = df_all[(df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)]
 
+        # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
         tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
 
         with tabs[0]:
@@ -241,7 +233,6 @@ def main():
             for sid, calle in SENSORES_ABANDO.items():
                 actual = len(df_f[df_f[c_id] == sid])
                 pct = min((actual / esperados) * 100, 100.0)
-                
                 estado = 'Óptimos' if pct > 90 else ('Regulares' if pct > 50 else ('Malos' if pct > 0 else 'Sin Datos'))
                 salud_stats[estado] += 1
                 cobertura_data.append({'Calle': calle, 'Cobertura %': pct, 'Color': COLORES_ESTADO[estado]})
@@ -259,135 +250,39 @@ def main():
                 df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
                 fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
                 ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
-                ax_bar.set_xlim(0, 105)
-                ax_bar.set_xlabel("Cobertura (%)", fontsize=9)
+                ax_bar.set_xlabel("Cobertura (%)")
                 st.pyplot(fig_bar)
 
         with tabs[1]:
             sensores_con_datos = df_f[c_id].unique()
             opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
-            
             if opciones_sensor:
                 sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
                 df_s = df_f[df_f[c_id] == sel_id]
-                st.markdown(f"### Ubicación: {SENSORES_ABANDO[sel_id]}")
-                
                 delta_dias = (f_fin - f_ini).days
                 if delta_dias < 7:
-                    st.info("Visualización Unificada: Día (Naranja), Noche (Azul).")
-                    fig_uni = generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt)
-                    if fig_uni: st.pyplot(fig_uni)
+                    st.pyplot(generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt))
                 else:
-                    st.info("Visualización por Periodos: Día y Noche independientes con misma escala.")
-                    fig_day = generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt)
-                    if fig_day: st.pyplot(fig_day)
-                    fig_night = generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt)
-                    if fig_night: st.pyplot(fig_night)
-            else:
-                st.warning("No hay datos para el rango seleccionado.")
+                    st.pyplot(generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt))
+                    st.pyplot(generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt))
 
         with tabs[2]:
             st.subheader("Top 5 Impactos Críticos")
             df_rank = df_f.copy()
             df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
             df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
-            
-            def get_top_5_unique(data):
+            def get_top_5(data):
                 if data.empty: return pd.DataFrame()
                 return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
-            
-            col_d, col_n = st.columns(2)
-            with col_d:
-                st.markdown("☀️ **Día (Lmax registrados)**")
-                st.dataframe(get_top_5_unique(df_rank[df_rank['PERIODO'] == 'DIA']), use_container_width=True, hide_index=True)
-            with col_n:
-                st.markdown("🌙 **Noche (Lmax registrados)**")
-                st.dataframe(get_top_5_unique(df_rank[df_rank['PERIODO'] == 'NOCHE']), use_container_width=True, hide_index=True)
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("☀️ Día")
+                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'DIA']), use_container_width=True, hide_index=True)
+            with c2:
+                st.write("🌙 Noche")
+                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE']), use_container_width=True, hide_index=True)
     else:
         st.info("Dashboard listo. Cargue datos para comenzar.")
 
-    # --- SUSTITUYE DESDE AQUÍ HASTA EL FINAL DEL ARCHIVO ---
-def main():
-    st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
-    
-    # 1. CARGA AUTOMÁTICA (Nada más abrir la app)
-    # Intentamos leer el archivo que subiste al repositorio
-    if 'df_master' not in st.session_state:
-        if os.path.exists("datos_sonometros.csv"):
-            try:
-                # Leemos el archivo físico
-                df_res = pd.read_csv("datos_sonometros.csv", sep=';', encoding='utf-8-sig')
-                # Lo pasamos por tu función de limpieza para que reconozca columnas y fechas
-                # Como procesar_datos_cache espera texto, le pasamos el contenido
-                with open("datos_sonometros.csv", "r", encoding='utf-8-sig') as f:
-                    df_proc, cid = procesar_datos_cache(f.read())
-                    st.session_state.df_master = df_proc
-                    st.session_state.col_id = cid
-                st.success("✅ Datos cargados automáticamente desde el repositorio")
-            except Exception as e:
-                st.error(f"Error al cargar el archivo automático: {e}")
-
-    # --- BARRA LATERAL ---
-    st.sidebar.header("📂 Gestión de Datos")
-    # Añadimos una opción para saber que estamos usando el archivo del repo
-    metodo = st.sidebar.radio("Origen de datos:", ["Archivo del Repositorio", "Subir nuevo CSV"])
-
-    if metodo == "Subir nuevo CSV":
-        file = st.sidebar.file_uploader("Selecciona un archivo .csv", type=['csv'])
-        if file:
-            content = file.getvalue().decode("utf-8-sig")
-            df_proc, cid = procesar_datos_cache(content)
-            st.session_state.df_master = df_proc
-            st.session_state.col_id = cid
-            st.sidebar.success("¡Archivo manual cargado!")
-
-    # --- MOSTRAR EL CONTENIDO SOLO SI HAY DATOS ---
-    if st.session_state.df_master is not None:
-        df_f_base = st.session_state.df_master
-        c_id = st.session_state.col_id
-        
-        # Filtro de fechas
-        st.sidebar.subheader("🗓️ Filtro Temporal")
-        f_min, f_max = df_f_base['FECHA_DT'].min().date(), df_f_base['FECHA_DT'].max().date()
-        f_ini = st.sidebar.date_input("Desde", f_min)
-        f_fin = st.sidebar.date_input("Hasta", f_max)
-        
-        f_ini_dt = datetime.combine(f_ini, datetime.min.time())
-        f_fin_dt = datetime.combine(f_fin, datetime.max.time())
-        
-        # Aplicamos el filtro al dataframe
-        df_f = df_f_base[(df_f_base['FECHA_DT'] >= f_ini_dt) & (df_f_base['FECHA_DT'] <= f_fin_dt)]
-
-        # --- PESTAÑAS (Tus pestañas originales) ---
-        tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
-
-        with tabs[0]:
-            # (Aquí va el código que ya tenías para la pestaña 0: tartas y barras)
-            # Asegúrate de mantener la lógica de salud_stats que tenías
-            pass 
-
-        with tabs[1]:
-            sensores_con_datos = df_f[c_id].unique()
-            opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
-            
-            if opciones_sensor:
-                sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, 
-                                    format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
-                df_s = df_f[df_f[c_id] == sel_id]
-                st.markdown(f"### Ubicación: {SENSORES_ABANDO[sel_id]}")
-                
-                fig_uni = generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt)
-                st.pyplot(fig_uni)
-            else:
-                st.warning("No hay datos para estos sensores en las fechas seleccionadas.")
-
-        with tabs[2]:
-            # (Aquí va el código que ya tenías para el Top 5)
-            pass
-            
-    else:
-        st.info("Esperando datos... Si el archivo no carga solo, usa la opción 'Subir nuevo CSV'.")
-
-# ESTO ES LO QUE HACE QUE EL MOTOR ARRANQUE:
 if __name__ == "__main__":
     main()
