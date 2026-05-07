@@ -1,21 +1,31 @@
-name: Robot Descargador de Datos
+name: Robot Descargador
 
 on:
+  workflow_dispatch: # Permite darle al botón de "Run" a mano
   schedule:
-    - cron: '0 0 * * *' # Esto significa: Ejecutar cada noche a las 00:00
-  workflow_dispatch:     # Esto sirve para que puedas darle a un botón de "Play" tú misma
+    - cron: '0 8 * * *' # Se ejecuta todos los días a las 8 AM
 
 jobs:
   descarga:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3 # El robot abre tu carpeta
-      - uses: actions/setup-python@v4 # El robot prepara Python
+      - name: Checkout de la carpeta
+        uses: actions/checkout@v4
+
+      - name: Configurar Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.9'
-      - run: pip install requests pandas # El robot instala lo que necesita
-      - run: python script_descarga.py    # El robot ejecuta tu código
-      - name: Guardar los cambios
+
+      - name: Instalar librerias
+        run: |
+          pip install requests pandas
+
+      - name: Ejecutar script de descarga
+        run: |
+          python script_descarga.py
+
+      - name: Guardar y subir cambios
         run: |
           git config --global user.name 'Robot-Sonometros'
           git config --global user.email 'robot@github.com'
