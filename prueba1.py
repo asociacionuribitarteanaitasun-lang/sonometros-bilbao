@@ -308,7 +308,6 @@ def main():
 
 if __name__ == "__main__":
     # --- SUSTITUYE DESDE AQUÍ HASTA EL FINAL DEL ARCHIVO ---
-
 def main():
     st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
     
