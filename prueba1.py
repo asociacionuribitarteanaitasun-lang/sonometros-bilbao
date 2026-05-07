@@ -7,6 +7,7 @@ import matplotlib.dates as mdates
 from datetime import datetime, timedelta
 import unicodedata
 import os
+import requests
 
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
@@ -305,5 +306,90 @@ def main():
     else:
         st.info("Dashboard listo. Cargue datos para comenzar.")
 
+if __name__ == "__main__":
+    # --- SUSTITUYE DESDE AQUÍ HASTA EL FINAL DEL ARCHIVO ---
+
+def main():
+    st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
+    
+    # 1. CARGA AUTOMÁTICA (Nada más abrir la app)
+    # Intentamos leer el archivo que subiste al repositorio
+    if 'df_master' not in st.session_state:
+        if os.path.exists("datos_sonometros.csv"):
+            try:
+                # Leemos el archivo físico
+                df_res = pd.read_csv("datos_sonometros.csv", sep=';', encoding='utf-8-sig')
+                # Lo pasamos por tu función de limpieza para que reconozca columnas y fechas
+                # Como procesar_datos_cache espera texto, le pasamos el contenido
+                with open("datos_sonometros.csv", "r", encoding='utf-8-sig') as f:
+                    df_proc, cid = procesar_datos_cache(f.read())
+                    st.session_state.df_master = df_proc
+                    st.session_state.col_id = cid
+                st.success("✅ Datos cargados automáticamente desde el repositorio")
+            except Exception as e:
+                st.error(f"Error al cargar el archivo automático: {e}")
+
+    # --- BARRA LATERAL ---
+    st.sidebar.header("📂 Gestión de Datos")
+    # Añadimos una opción para saber que estamos usando el archivo del repo
+    metodo = st.sidebar.radio("Origen de datos:", ["Archivo del Repositorio", "Subir nuevo CSV"])
+
+    if metodo == "Subir nuevo CSV":
+        file = st.sidebar.file_uploader("Selecciona un archivo .csv", type=['csv'])
+        if file:
+            content = file.getvalue().decode("utf-8-sig")
+            df_proc, cid = procesar_datos_cache(content)
+            st.session_state.df_master = df_proc
+            st.session_state.col_id = cid
+            st.sidebar.success("¡Archivo manual cargado!")
+
+    # --- MOSTRAR EL CONTENIDO SOLO SI HAY DATOS ---
+    if st.session_state.df_master is not None:
+        df_f_base = st.session_state.df_master
+        c_id = st.session_state.col_id
+        
+        # Filtro de fechas
+        st.sidebar.subheader("🗓️ Filtro Temporal")
+        f_min, f_max = df_f_base['FECHA_DT'].min().date(), df_f_base['FECHA_DT'].max().date()
+        f_ini = st.sidebar.date_input("Desde", f_min)
+        f_fin = st.sidebar.date_input("Hasta", f_max)
+        
+        f_ini_dt = datetime.combine(f_ini, datetime.min.time())
+        f_fin_dt = datetime.combine(f_fin, datetime.max.time())
+        
+        # Aplicamos el filtro al dataframe
+        df_f = df_f_base[(df_f_base['FECHA_DT'] >= f_ini_dt) & (df_f_base['FECHA_DT'] <= f_fin_dt)]
+
+        # --- PESTAÑAS (Tus pestañas originales) ---
+        tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
+
+        with tabs[0]:
+            # (Aquí va el código que ya tenías para la pestaña 0: tartas y barras)
+            # Asegúrate de mantener la lógica de salud_stats que tenías
+            pass 
+
+        with tabs[1]:
+            sensores_con_datos = df_f[c_id].unique()
+            opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
+            
+            if opciones_sensor:
+                sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, 
+                                    format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
+                df_s = df_f[df_f[c_id] == sel_id]
+                st.markdown(f"### Ubicación: {SENSORES_ABANDO[sel_id]}")
+                
+                fig_uni = generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt)
+                st.pyplot(fig_uni)
+            else:
+                st.warning("No hay datos para estos sensores en las fechas seleccionadas.")
+
+        with tabs[2]:
+            # (Aquí va el código que ya tenías para el Top 5)
+            pass
+            
+    else:
+        st.info("Esperando datos... Si el archivo no carga solo, usa la opción 'Subir nuevo CSV'.")
+
+# ESTO ES LO QUE HACE QUE EL MOTOR ARRANQUE:
 if __name__ == "__main__":
     main()
