@@ -180,25 +180,34 @@ def main():
 
     # --- 1. CARGA CON DETECCIÓN AUTOMÁTICA ---
 try:
-    df_all = pd.read_csv("datos_sonometros.csv", encoding='utf-8-sig')
+    # Usamos sep=None para que detecte si es coma o punto y coma automáticamente
+    df_all = pd.read_csv("datos_sonometros.csv", sep=None, engine='python', encoding='utf-8-sig')
 
-    # Buscamos qué columna contiene la palabra 'FECHA' (sin importar mayúsculas)
-    col_fecha = None
-    for col in df_all.columns:
-        if 'FECHA' in col.upper():
-            col_fecha = col
-            break
+    # Buscamos la columna de FECHA
+    col_fecha = next((col for col in df_all.columns if 'FECHA' in col.upper()), None)
+    
+    # Buscamos la columna de ID (N_EXPEDIENTE o similar)
+    c_id = next((col for col in df_all.columns if 'EXPEDIENTE' in col.upper() or 'ID' in col.upper()), df_all.columns[0])
 
     if col_fecha is None:
-        st.error("⚠️ No se encontró ninguna columna de fecha en el archivo.")
+        st.error("⚠️ No se encontró la columna de fecha.")
         st.stop()
 
-    # Convertimos la columna encontrada a formato fecha
-    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha])
+    # Convertimos a datetime forzando errores a NaT (para que no rompa la App)
+    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha], errors='coerce')
+    df_all = df_all.dropna(subset=[col_fecha]) # Limpiamos filas corruptas
     
+    # Creamos la columna FECHA_DT estandarizada y el PERIODO
+    df_all['FECHA_DT'] = df_all[col_fecha]
+    df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
+
     # --- 2. LÍMITES REALES ---
-    f_min_real = df_all[col_fecha].min()
-    f_max_real = df_all[col_fecha].max()
+    f_min_real = df_all['FECHA_DT'].min().date()
+    f_max_real = df_all['FECHA_DT'].max().date()
+
+except Exception as e:
+    st.error(f"Error crítico al leer el CSV: {e}")
+    st.stop()
 
     # --- 3. FILTRO TEMPORAL ---
     st.sidebar.header("🗓️ Filtro Temporal")
