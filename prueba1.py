@@ -201,9 +201,41 @@ try:
     df_all['FECHA_DT'] = df_all[col_fecha]
     df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
 
-  # --- 2. LÍMITES REALES Y SELECTOR ---
+# --- 1. CARGA CON DETECCIÓN AUTOMÁTICA ---
+try:
+    # Usamos sep=None para que detecte si es coma o punto y coma automáticamente
+    df_all = pd.read_csv("datos_sonometros.csv", sep=None, engine='python', encoding='utf-8-sig')
+
+    # A. BUSCAR COLUMNA DE FECHA
+    col_fecha = next((col for col in df_all.columns if 'FECHA' in col.upper()), None)
+    if col_fecha is None:
+        st.error("⚠️ No se encontró la columna de fecha.")
+        st.stop()
+
+    # B. BUSCAR COLUMNA DE ID (Sensor)
+    c_id = next((col for col in df_all.columns if 'EXPEDIENTE' in col.upper() or 'ID' in col.upper()), df_all.columns[0])
+    
+    # C. BUSCAR COLUMNA DE RUIDO Y REBAUTIZARLA COMO 'DECIBELIOS'
+    col_ruido = next((col for col in df_all.columns if 'DECIBEL' in col.upper() or 'VALOR' in col.upper() or 'NIVEL' in col.upper()), None)
+    
+    if col_ruido:
+        df_all = df_all.rename(columns={col_ruido: 'DECIBELIOS'})
+    else:
+        # Si no la encuentra, intentamos usar la segunda columna por defecto
+        df_all = df_all.rename(columns={df_all.columns[1]: 'DECIBELIOS'})
+    
+    # Convertir decibelios a número (forzando errores a NaN para limpiar)
+    df_all['DECIBELIOS'] = pd.to_numeric(df_all['DECIBELIOS'], errors='coerce')
+
+    # D. LIMPIEZA Y FECHAS
+    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha], errors='coerce')
+    df_all = df_all.dropna(subset=[col_fecha, 'DECIBELIOS']) # Quitamos filas vacías o corruptas
+    
+    df_all['FECHA_DT'] = df_all[col_fecha]
+    df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
+
+    # --- 2. LÍMITES REALES Y SELECTOR ---
     f_min_real = df_all['FECHA_DT'].min().date()
-    # Guardamos f_max_real como objeto completo para mostrar la hora en el info
     f_max_real_dt = df_all['FECHA_DT'].max() 
     f_max_real_date = f_max_real_dt.date()
 
@@ -221,21 +253,19 @@ try:
     else:
         f_ini, f_fin = f_min_real, f_max_real_date
 
-    # Convertimos a datetime para que la comparación sea exacta
     f_ini_dt = pd.to_datetime(f_ini)
     f_fin_dt = pd.to_datetime(f_fin).replace(hour=23, minute=59, second=59)
     
     mask = (df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)
     df_f = df_all.loc[mask]
 
-    # Info de la última lectura en la barra lateral
     st.sidebar.info(f"Última lectura: {f_max_real_dt.strftime('%d/%m/%Y %H:%M')}")
 
 except Exception as e:
     st.error(f"❌ Error crítico al procesar datos: {e}")
-    st.stop()       
+    st.stop() 
 
- # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
+# --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
 tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
 
 with tabs[0]:
@@ -286,22 +316,39 @@ with tabs[1]:
 
 with tabs[2]:
     st.subheader("Top 5 Impactos Críticos")
+    
+    # 1. Crear la copia para el ranking
     df_rank = df_f.copy()
+    
+    # 2. Asegurar que tenemos la columna DECIBELIOS
+    if 'DECIBELIOS' not in df_rank.columns:
+        cols_numericas = df_rank.select_dtypes(include=['number']).columns
+        if len(cols_numericas) > 0:
+            df_rank = df_rank.rename(columns={cols_numericas[0]: 'DECIBELIOS'})
+
+    # 3. Mapear ubicaciones e instantes
     df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
-    # Usamos FECHA_DT que es la columna estandarizada que creamos en la carga
     df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
-    
+
     def get_top_5(data):
-        if data.empty: return pd.DataFrame()
-        return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
-    
+        if data.empty: 
+            return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
+        try:
+            res = data.sort_values('DECIBELIOS', ascending=False)
+            res = res.drop_duplicates(subset=[c_id]).head(5)
+            return res[['Ubicación', 'DECIBELIOS', 'Instante']]
+        except:
+            return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
+
     c1, c2 = st.columns(2)
     with c1:
         st.write("☀️ Día")
-        st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'DIA']), use_container_width=True, hide_index=True)
+        df_dia = get_top_5(df_rank[df_rank['PERIODO'] == 'DIA'])
+        st.dataframe(df_dia, use_container_width=True, hide_index=True)
     with c2:
         st.write("🌙 Noche")
-        st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE']), use_container_width=True, hide_index=True)
+        df_noche = get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE'])
+        st.dataframe(df_noche, use_container_width=True, hide_index=True)
 
 if __name__ == "__main__":
     main()
