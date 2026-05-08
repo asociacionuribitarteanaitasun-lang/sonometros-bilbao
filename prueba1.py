@@ -1,26 +1,26 @@
 import streamlit as st
 import pandas as pd
-import requests
-from io import StringIO
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime, timedelta
-import unicodedata
+from datetime import datetime
 import os
-import ssl
-import urllib3
+import holidays  # <--- Mantenla para el sombreado de fiestas
 
-# --- ARREGLO DE CONEXIÓN PARA OPEN DATA ---
-try:
-    _create_unverified_https_context = ssl._create_unverified_context
-except AttributeError:
-    pass
-else:
-    ssl._create_default_https_context = _create_unverified_https_context
+# Configuramos los festivos de España y específicamente del País Vasco
+# 'PV' aplica los festivos autonómicos (como el Lunes de Pascua)
+festivos_euskadi = holidays.Spain(subdiv='PV')
 
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+def es_dia_especial(fecha):
+    """
+    Detecta si es festivo o fin de semana.
+    """
+    # Si la fecha es un festivo oficial en Euskadi o es Sábado (5) o Domingo (6)
+    if fecha in festivos_euskadi or fecha.weekday() >= 5:
+        return True
+    return False
+    # Añadir un festivo local a mano si no viene en la librería
+festivos_euskadi.append({"2026-08-28": "Viernes Grande Bilbao"})
 # --- CONFIGURACIÓN DE PÁGINA ---
 st.set_page_config(
     page_title="Auditoría Acústica Bilbao - Abando", 
@@ -43,12 +43,6 @@ SENSORES_ABANDO = {
     'BI-RUI-C034': 'ARETXABALETA 6', 'BI-RUI-P009': 'ALAMEDA RECALDE'
 }
 
-FESTIVOS_BILBAO = [
-    '2026-01-01', '2026-01-06', '2026-03-19', '2026-04-02', '2026-04-03', 
-    '2026-04-06', '2026-05-01', '2026-07-25', '2026-08-15', '2026-10-12', 
-    '2026-11-01', '2026-12-06', '2026-12-08', '2026-12-25'
-]
-
 COLORES_ESTADO = {
     'Óptimos': '#2ecc71', 
     'Regulares': '#f1c40f', 
@@ -67,14 +61,27 @@ def clasificar_periodo(dt):
     return "DIA" if 7 <= dt.hour < 23 else "NOCHE"
 
 def es_dia_especial(dt):
-    if dt.weekday() in [4, 5, 6]: return True 
-    fecha_str = dt.strftime('%Y-%m-%d')
-    if fecha_str in FESTIVOS_BILBAO: return True
-    mañana_str = (dt + timedelta(days=1)).strftime('%Y-%m-%d')
-    if mañana_str in FESTIVOS_BILBAO: return True
-    return False
-
-@st.cache_data(show_spinner=False)
+    """
+    Detecta si es festivo, víspera de festivo o fin de semana.
+    """
+    # Convertimos a objeto date (solo día, sin hora)
+    fecha_hoy = dt.date() if hasattr(dt, 'date') else dt
+    fecha_manana = fecha_hoy + timedelta(days=1)
+    
+    # 1. ¿Es festivo hoy?
+    if fecha_hoy in festivos_euskadi:
+        return True
+    
+    # 2. ¿Es víspera (mañana es festivo)?
+    if fecha_manana in festivos_euskadi:
+        return True
+    
+    # 3. ¿Es fin de semana? (Viernes=4, Sábado=5, Domingo=6)
+    # Incluimos el viernes porque su noche es víspera de sábado
+    if dt.weekday() in [4, 5, 6]: 
+        return True
+        
+    return False@st.cache_data(show_spinner=False)
 def procesar_datos_cache(csv_content):
     try:
         df = pd.read_csv(StringIO(csv_content), sep=';', encoding='utf-8-sig')
@@ -171,55 +178,51 @@ def main():
         st.session_state.df_master = None
         st.session_state.col_id = None
 
-    # --- LÓGICA DE CARGA AUTOMÁTICA ---
-    # Intenta cargar el archivo de GitHub al abrir la app
-    if st.session_state.df_master is None:
-        if os.path.exists("datos_sonometros.csv"):
-            try:
-                with open("datos_sonometros.csv", "r", encoding='utf-8-sig') as f:
-                    content = f.read()
-                    df_p, cid_p = procesar_datos_cache(content)
-                    st.session_state.df_master = df_p
-                    st.session_state.col_id = cid_p
-                st.success("✅ Datos del repositorio cargados correctamente")
-            except:
-                pass
+    # --- 1. CARGA CON DETECCIÓN AUTOMÁTICA ---
+try:
+    df_all = pd.read_csv("datos_sonometros.csv", encoding='utf-8-sig')
 
-    st.sidebar.header("📂 Gestión de Datos")
-    metodo = st.sidebar.radio("Origen:", ["Archivo Automático", "Sincronización Open Data", "Carga Manual (.csv)"])
+    # Buscamos qué columna contiene la palabra 'FECHA' (sin importar mayúsculas)
+    col_fecha = None
+    for col in df_all.columns:
+        if 'FECHA' in col.upper():
+            col_fecha = col
+            break
 
-    csv_to_load = None
-    if metodo == "Sincronización Open Data":
-        if st.sidebar.button("🚀 Sincronizar con Bilbao Cloud"):
-            url_target = "https://www.bilbao.eus/aytoonline/jsp/opendata/movilidad/od_sonometro_mediciones.jsp?idioma=c&formato=csv"
-            try:
-                r = requests.get(url_target, timeout=25, verify=False)
-                if r.status_code == 200:
-                    csv_to_load = r.text
-            except:
-                st.sidebar.error("Error de conexión.")
-    elif metodo == "Carga Manual (.csv)":
-        file = st.sidebar.file_uploader("Subir CSV", type=['csv'])
-        if file: csv_to_load = file.getvalue().decode("utf-8-sig")
+    if col_fecha is None:
+        st.error("⚠️ No se encontró ninguna columna de fecha en el archivo.")
+        st.stop()
 
-    if csv_to_load:
-        df_proc, cid = procesar_datos_cache(csv_to_load)
-        st.session_state.df_master = df_proc
-        st.session_state.col_id = cid
+    # Convertimos la columna encontrada a formato fecha
+    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha])
+    
+    # --- 2. LÍMITES REALES ---
+    f_min_real = df_all[col_fecha].min()
+    f_max_real = df_all[col_fecha].max()
 
-    if st.session_state.df_master is not None:
-        df_all = st.session_state.df_master
-        c_id = st.session_state.col_id
-        
-        st.sidebar.subheader("🗓️ Filtro Temporal")
-        f_min, f_max = df_all['FECHA_DT'].min().date(), df_all['FECHA_DT'].max().date()
-        f_ini = st.sidebar.date_input("Desde", f_min)
-        f_fin = st.sidebar.date_input("Hasta", f_max)
-        
-        f_ini_dt = datetime.combine(f_ini, datetime.min.time())
-        f_fin_dt = datetime.combine(f_fin, datetime.max.time())
-        df_f = df_all[(df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)]
+    # --- 3. FILTRO TEMPORAL ---
+    st.sidebar.header("🗓️ Filtro Temporal")
+    rango = st.sidebar.date_input(
+        "Selecciona el rango:",
+        value=(f_min_real.date(), f_max_real.date()),
+        min_value=f_min_real.date(),
+        max_value=f_max_real.date()
+    )
 
+    # --- 4. APLICAR FILTRO ---
+    if isinstance(rango, tuple) and len(rango) == 2:
+        f_ini, f_fin = rango
+        # Usamos la columna detectada dinámicamente
+        mask = (df_all[col_fecha].dt.date >= f_ini) & (df_all[col_fecha].dt.date <= f_fin)
+        df_f = df_all.loc[mask]
+    else:
+        df_f = df_all
+
+    st.sidebar.info(f"Última lectura: {f_max_real.strftime('%d/%m/%Y %H:%M')}")
+
+except Exception as e:
+    st.error(f"❌ Error al procesar los datos: {e}")
+    st.stop()
         # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
         tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
 
