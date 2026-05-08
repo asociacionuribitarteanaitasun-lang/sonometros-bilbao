@@ -3,34 +3,22 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.dates as mdates
-from datetime import datetime
-import os
-import holidays  # <--- Mantenla para el sombreado de fiestas
+from datetime import datetime, timedelta
+import holidays
+import unicodedata
 
-# Configuramos los festivos de España y específicamente del País Vasco
-# 'PV' aplica los festivos autonómicos (como el Lunes de Pascua)
+# --- CONFIGURACIÓN ---
 festivos_euskadi = holidays.Spain(subdiv='PV')
-
-def es_dia_especial(fecha):
-    """
-    Detecta si es festivo o fin de semana.
-    """
-    # Si la fecha es un festivo oficial en Euskadi o es Sábado (5) o Domingo (6)
-    if fecha in festivos_euskadi or fecha.weekday() >= 5:
-        return True
-    return False
-    # Añadir un festivo local a mano si no viene en la librería
 festivos_euskadi.append({"2026-08-28": "Viernes Grande Bilbao"})
-# --- CONFIGURACIÓN DE PÁGINA ---
+
 st.set_page_config(
     page_title="Auditoría Acústica Bilbao - Abando", 
     page_icon="🔊",
     layout="wide"
 )
 
-# --- DICCIONARIO MAESTRO: 32 SENSORES DE ABANDO ---
 SENSORES_ABANDO = {
-    'BI-RUI-001': 'RODRIGUEZ ARIAS', 'BI-RUI-020': 'POZA 48', 'BI-RUI-021': 'POZA 53',
+    'BI-RUI-001': 'RODRIGUEZ ARIAS 71bis', 'BI-RUI-020': 'POZA 48', 'BI-RUI-021': 'POZA 53',
     'BI-RUI-022': 'POZA 30', 'BI-RUI-025': 'PRINCIPE 1', 'BI-RUI-BR15': 'ALAMEDA URQUIJO',
     'BI-RUI-BR2': 'FRENTE IGLESIA', 'BI-RUI-C001': 'URIBITARTE 1', 'BI-RUI-C002': 'URIBITARTE 6',
     'BI-RUI-C003': 'MUELLE RIPA', 'BI-RUI-C004': 'ESCALINATAS DE URIBITARTE', 'BI-RUI-C008': 'RIPA 5',
@@ -44,66 +32,19 @@ SENSORES_ABANDO = {
 }
 
 COLORES_ESTADO = {
-    'Óptimos': '#2ecc71', 
-    'Regulares': '#f1c40f', 
-    'Malos': '#e67e22', 
-    'Sin Datos': '#95a5a6'
+    'Óptimos': '#2ecc71', 'Regulares': '#f1c40f', 'Malos': '#e67e22', 'Sin Datos': '#95a5a6'
 }
 
-# --- UTILIDADES DE PROCESAMIENTO ---
-def limpiar_texto(texto):
-    if not isinstance(texto, str): return texto
-    texto = unicodedata.normalize('NFD', texto).encode('ascii', 'ignore').decode("utf-8")
-    return texto.strip().upper()
-
+# --- FUNCIONES DE APOYO ---
 def clasificar_periodo(dt):
-    if not isinstance(dt, datetime): return "N/A"
     return "DIA" if 7 <= dt.hour < 23 else "NOCHE"
 
 def es_dia_especial(dt):
-    """
-    Detecta si es festivo, víspera de festivo o fin de semana.
-    """
-    # Convertimos a objeto date (solo día, sin hora)
-    fecha_hoy = dt.date() if hasattr(dt, 'date') else dt
+    fecha_hoy = dt.date()
     fecha_manana = fecha_hoy + timedelta(days=1)
-    
-    # 1. ¿Es festivo hoy?
-    if fecha_hoy in festivos_euskadi:
+    if fecha_hoy in festivos_euskadi or fecha_manana in festivos_euskadi or dt.weekday() in [4, 5, 6]:
         return True
-    
-    # 2. ¿Es víspera (mañana es festivo)?
-    if fecha_manana in festivos_euskadi:
-        return True
-    
-    # 3. ¿Es fin de semana? (Viernes=4, Sábado=5, Domingo=6)
-    # Incluimos el viernes porque su noche es víspera de sábado
-    if dt.weekday() in [4, 5, 6]: 
-        return True
-        
-    return False@st.cache_data(show_spinner=False)
-def procesar_datos_cache(csv_content):
-    try:
-        df = pd.read_csv(StringIO(csv_content), sep=';', encoding='utf-8-sig')
-        if len(df.columns) < 2:
-            df = pd.read_csv(StringIO(csv_content), sep=',', encoding='utf-8-sig')
-    except:
-        df = pd.read_csv(StringIO(csv_content), sep=None, engine='python', encoding='utf-8-sig')
-        
-    df.columns = [limpiar_texto(c) for c in df.columns]
-    c_t = next(c for c in ['FECHA/HORA MEDICION', 'HORA', 'FECHA'] if c in df.columns)
-    c_v = next(c for c in ['DECIBELIOS MEDIDOS', 'LAEQ', 'DECIBELIOS'] if c in df.columns)
-    c_id = next(c for c in ['CODIGO', 'ID_SONOMETRO', 'ID'] if c in df.columns)
-    
-    df['FECHA_DT'] = pd.to_datetime(df[c_t], errors='coerce')
-    df['DECIBELIOS'] = pd.to_numeric(df[c_v].astype(str).str.replace(',', '.'), errors='coerce')
-    
-    df = df[df[c_id].isin(SENSORES_ABANDO.keys())]
-    df = df.dropna(subset=['FECHA_DT', 'DECIBELIOS'])
-    df['PERIODO'] = df['FECHA_DT'].apply(clasificar_periodo)
-    
-    return df.sort_values('FECHA_DT'), c_id
-
+    return False
 # --- MOTOR GRÁFICO ---
 def aplicar_estetica_ejes(ax, titulo, f_ini, f_fin, ylabel="dB(A)"):
     ax.set_title(titulo, fontsize=10, fontweight='bold', pad=10)
@@ -114,6 +55,7 @@ def aplicar_estetica_ejes(ax, titulo, f_ini, f_fin, ylabel="dB(A)"):
     ax.tick_params(labelsize=8)
 
 def sombrear_especiales(ax, f_ini, f_fin):
+    """Dibuja las franjas grises en findes y festivos."""
     curr = f_ini.replace(hour=0, minute=0, second=0, microsecond=0)
     while curr <= f_fin:
         if es_dia_especial(curr):
@@ -123,26 +65,35 @@ def sombrear_especiales(ax, f_ini, f_fin):
 def generar_grafico_unificado(df_sel, f_ini, f_fin):
     fig, ax = plt.subplots(figsize=(12, 5))
     df_p = df_sel.sort_values('FECHA_DT')
+    
+    # Sombreado de fondos
     sombrear_especiales(ax, f_ini, f_fin)
+    
     if not df_p.empty:
         tiempos = df_p['FECHA_DT'].values
         valores = df_p['DECIBELIOS'].values
         periodos = df_p['PERIODO'].values
+        
+        # Dibujo por segmentos para evitar líneas locas y poner colores
         for i in range(len(tiempos) - 1):
             t1, t2 = tiempos[i], tiempos[i+1]
             v1, v2 = valores[i], valores[i+1]
             p1 = periodos[i]
+            
             diff = (t2 - t1).astype('timedelta64[m]').astype(int)
-            if diff <= 20:
+            
+            if diff <= 20: # Si hay hueco de más de 20min, no dibuja línea
                 color = '#e67e22' if p1 == "DIA" else '#2980b9'
                 ax.plot([t1, t2], [v1, v2], color=color, linewidth=1.2, alpha=0.8)
+    
+    # Leyendas y límites
     ax.plot([], [], color='#e67e22', label="Nivel Día")
     ax.plot([], [], color='#2980b9', label="Nivel Noche")
     ax.axhline(65, color='red', linestyle='--', linewidth=0.8, alpha=0.5, label="Límite Día (65dB)")
     ax.axhline(55, color='darkblue', linestyle='--', linewidth=0.8, alpha=0.5, label="Límite Noche (55dB)")
+    
     aplicar_estetica_ejes(ax, "Evolución Acústica 24h", f_ini, f_fin)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m %H:%M'))
-    ax.xaxis.set_major_locator(mdates.HourLocator(interval=12))
     ax.legend(fontsize=8, loc='upper right', ncol=2)
     plt.tight_layout()
     return fig
@@ -150,19 +101,24 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
 def generar_grafico_periodo(df_sel, periodo, color, limite, f_ini, f_fin):
     fig, ax = plt.subplots(figsize=(12, 4))
     sombrear_especiales(ax, f_ini, f_fin)
+    
     df_p = df_sel[df_sel['PERIODO'] == periodo].copy().sort_values('FECHA_DT')
+    
     if not df_p.empty:
         tiempos = df_p['FECHA_DT'].values
         valores = df_p['DECIBELIOS'].values
+        
         new_tiempos, new_valores = [tiempos[0]], [valores[0]]
         for i in range(1, len(tiempos)):
             diff = (tiempos[i] - tiempos[i-1]).astype('timedelta64[m]').astype(int)
-            if diff > 20:
+            if diff > 25:
                 new_tiempos.append(tiempos[i-1] + (tiempos[i] - tiempos[i-1]) / 2)
                 new_valores.append(np.nan)
             new_tiempos.append(tiempos[i])
             new_valores.append(valores[i])
+            
         ax.plot(new_tiempos, new_valores, color=color, linewidth=1.5, alpha=0.8, label=f"Nivel {periodo}")
+    
     ax.axhline(limite, color='red', linestyle='--', linewidth=1, alpha=0.7, label=f"Límite {limite}dB")
     aplicar_estetica_ejes(ax, f"Análisis Temporal: Periodo {periodo}", f_ini, f_fin)
     ax.xaxis.set_major_formatter(mdates.DateFormatter('%d/%m'))
@@ -173,182 +129,138 @@ def generar_grafico_periodo(df_sel, periodo, color, limite, f_ini, f_fin):
 # --- APP PRINCIPAL ---
 def main():
     st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
-    
-    if 'df_master' not in st.session_state:
-        st.session_state.df_master = None
-        st.session_state.col_id = None
 
-    # --- 1. CARGA CON DETECCIÓN AUTOMÁTICA ---
-try:
-    # Usamos sep=None para que detecte si es coma o punto y coma automáticamente
-    df_all = pd.read_csv("datos_sonometros.csv", sep=None, engine='python', encoding='utf-8-sig')
-
-    # Buscamos la columna de FECHA
-    col_fecha = next((col for col in df_all.columns if 'FECHA' in col.upper()), None)
-    
-    # Buscamos la columna de ID (N_EXPEDIENTE o similar)
-    c_id = next((col for col in df_all.columns if 'EXPEDIENTE' in col.upper() or 'ID' in col.upper()), df_all.columns[0])
-
-    if col_fecha is None:
-        st.error("⚠️ No se encontró la columna de fecha.")
-        st.stop()
-
-    # Convertimos a datetime forzando errores a NaT (para que no rompa la App)
-    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha], errors='coerce')
-    df_all = df_all.dropna(subset=[col_fecha]) # Limpiamos filas corruptas
-    
-    # Creamos la columna FECHA_DT estandarizada y el PERIODO
-    df_all['FECHA_DT'] = df_all[col_fecha]
-    df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
-
-# --- 1. CARGA CON DETECCIÓN AUTOMÁTICA ---
-try:
-    # Usamos sep=None para que detecte si es coma o punto y coma automáticamente
-    df_all = pd.read_csv("datos_sonometros.csv", sep=None, engine='python', encoding='utf-8-sig')
-
-    # A. BUSCAR COLUMNA DE FECHA
-    col_fecha = next((col for col in df_all.columns if 'FECHA' in col.upper()), None)
-    if col_fecha is None:
-        st.error("⚠️ No se encontró la columna de fecha.")
-        st.stop()
-
-    # B. BUSCAR COLUMNA DE ID (Sensor)
-    c_id = next((col for col in df_all.columns if 'EXPEDIENTE' in col.upper() or 'ID' in col.upper()), df_all.columns[0])
-    
-    # C. BUSCAR COLUMNA DE RUIDO Y REBAUTIZARLA COMO 'DECIBELIOS'
-    col_ruido = next((col for col in df_all.columns if 'DECIBEL' in col.upper() or 'VALOR' in col.upper() or 'NIVEL' in col.upper()), None)
-    
-    if col_ruido:
-        df_all = df_all.rename(columns={col_ruido: 'DECIBELIOS'})
-    else:
-        # Si no la encuentra, intentamos usar la segunda columna por defecto
-        df_all = df_all.rename(columns={df_all.columns[1]: 'DECIBELIOS'})
-    
-    # Convertir decibelios a número (forzando errores a NaN para limpiar)
-    df_all['DECIBELIOS'] = pd.to_numeric(df_all['DECIBELIOS'], errors='coerce')
-
-    # D. LIMPIEZA Y FECHAS
-    df_all[col_fecha] = pd.to_datetime(df_all[col_fecha], errors='coerce')
-    df_all = df_all.dropna(subset=[col_fecha, 'DECIBELIOS']) # Quitamos filas vacías o corruptas
-    
-    df_all['FECHA_DT'] = df_all[col_fecha]
-    df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
-
-    # --- 2. LÍMITES REALES Y SELECTOR ---
-    f_min_real = df_all['FECHA_DT'].min().date()
-    f_max_real_dt = df_all['FECHA_DT'].max() 
-    f_max_real_date = f_max_real_dt.date()
-
-    st.sidebar.subheader("📅 Filtro de Fechas")
-    rango = st.sidebar.date_input(
-        "Selecciona periodo:",
-        value=(f_min_real, f_max_real_date),
-        min_value=f_min_real,
-        max_value=f_max_real_date
-    )
-
-    # --- 3. EXTRACCIÓN Y FILTRADO ---
-    if isinstance(rango, tuple) and len(rango) == 2:
-        f_ini, f_fin = rango
-    else:
-        f_ini, f_fin = f_min_real, f_max_real_date
-
-    f_ini_dt = pd.to_datetime(f_ini)
-    f_fin_dt = pd.to_datetime(f_fin).replace(hour=23, minute=59, second=59)
-    
-    mask = (df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)
-    df_f = df_all.loc[mask]
-
-    st.sidebar.info(f"Última lectura: {f_max_real_dt.strftime('%d/%m/%Y %H:%M')}")
-
-except Exception as e:
-    st.error(f"❌ Error crítico al procesar datos: {e}")
-    st.stop() 
-
-# --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
-tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
-
-with tabs[0]:
-    col1, col2 = st.columns([1, 2])
-    dias_total = max((f_fin - f_ini).days + 1, 1)
-    esperados = dias_total * 96 
-    salud_stats = {'Óptimos': 0, 'Regulares': 0, 'Malos': 0, 'Sin Datos': 0}
-    cobertura_data = []
-    
-    for sid, calle in SENSORES_ABANDO.items():
-        # Usamos c_id y col_fecha que detectamos en el bloque de carga
-        actual = len(df_f[df_f[c_id] == sid])
-        pct = min((actual / esperados) * 100, 100.0)
-        estado = 'Óptimos' if pct > 90 else ('Regulares' if pct > 50 else ('Malos' if pct > 0 else 'Sin Datos'))
-        salud_stats[estado] += 1
-        cobertura_data.append({'Calle': calle, 'Cobertura %': pct, 'Color': COLORES_ESTADO[estado]})
-
-    with col1:
-        st.subheader("Estado de Integridad")
-        fig_pie, ax_pie = plt.subplots()
-        labels = [k for k, v in salud_stats.items() if v > 0]
-        values = [v for k, v in salud_stats.items() if v > 0]
-        if values:
-            ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=[COLORES_ESTADO[l] for l in labels], startangle=90)
-            st.pyplot(fig_pie)
-
-    with col2:
-        st.subheader("Continuidad por Sensor")
-        if cobertura_data:
-            df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
-            fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
-            ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
-            ax_bar.set_xlabel("Cobertura (%)")
-            st.pyplot(fig_bar)
-
-with tabs[1]:
-    sensores_con_datos = df_f[c_id].unique()
-    opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
-    if opciones_sensor:
-        sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
-        df_s = df_f[df_f[c_id] == sel_id]
-        delta_dias = (f_fin - f_ini).days
-        if delta_dias < 7:
-            st.pyplot(generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt))
+    try:
+        # 1. Carga de datos
+        df_all = pd.read_csv("datos_sonometros.csv", sep=None, engine='python', encoding='utf-8-sig')
+        
+        # 2. Identificación de columnas
+        col_fecha = next(c for c in df_all.columns if 'FECHA' in c.upper())
+        c_id = next(c for c in df_all.columns if any(x in c.upper() for x in ['CODIGO', 'ID', 'EXPEDIENTE']))
+        col_ruido = next(c for c in df_all.columns if any(x in c.upper() for x in ['DECIBEL', 'VALOR', 'LAEQ']))
+        
+        # 3. Limpieza
+        df_all['FECHA_DT'] = pd.to_datetime(df_all[col_fecha], errors='coerce')
+        df_all['DECIBELIOS'] = pd.to_numeric(df_all[col_ruido].astype(str).str.replace(',', '.'), errors='coerce')
+        df_all = df_all.dropna(subset=['FECHA_DT', 'DECIBELIOS'])
+        df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
+        
+        # 4. Filtro lateral
+        f_min, f_max = df_all['FECHA_DT'].min(), df_all['FECHA_DT'].max()
+        st.sidebar.header("🗓️ Filtro Temporal")
+        rango = st.sidebar.date_input("Selecciona rango:", value=(f_min.date(), f_max.date()), min_value=f_min.date(), max_value=f_max.date())
+        
+        if isinstance(rango, tuple) and len(rango) == 2:
+            f_ini_dt = pd.to_datetime(rango[0])
+            f_fin_dt = pd.to_datetime(rango[1]).replace(hour=23, minute=59)
+            df_f = df_all[(df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)]
         else:
-            st.pyplot(generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt))
-            st.pyplot(generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt))
+            df_f = df_all
+            f_ini_dt, f_fin_dt = f_min, f_max
 
-with tabs[2]:
-    st.subheader("Top 5 Impactos Críticos")
-    
-    # 1. Crear la copia para el ranking
-    df_rank = df_f.copy()
-    
-    # 2. Asegurar que tenemos la columna DECIBELIOS
-    if 'DECIBELIOS' not in df_rank.columns:
-        cols_numericas = df_rank.select_dtypes(include=['number']).columns
-        if len(cols_numericas) > 0:
-            df_rank = df_rank.rename(columns={cols_numericas[0]: 'DECIBELIOS'})
+        # --- PESTAÑAS ---
+        tabs = st.tabs(["📊 Integridad", "📈 Gráficos", "🚩 Máximos"])
 
-    # 3. Mapear ubicaciones e instantes
-    df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
-    df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
+        with tabs[0]:
+            st.subheader("Integridad y Calidad de la Red")
+            
+            # Cálculo de estadísticas
+            dias_total = max((f_fin_dt - f_ini_dt).days + 1, 1)
+            esperados = dias_total * 96  # 4 lecturas por hora
+            salud_stats = {'Óptimos': 0, 'Regulares': 0, 'Malos': 0, 'Sin Datos': 0}
+            cobertura_data = []
+            
+            for sid, calle in SENSORES_ABANDO.items():
+                actual = len(df_f[df_f[c_id] == sid])
+                pct = min((actual / esperados) * 100, 100.0)
+                
+                if pct > 90: estado = 'Óptimos'
+                elif pct > 50: estado = 'Regulares'
+                elif pct > 0: estado = 'Malos'
+                else: estado = 'Sin Datos'
+                
+                salud_stats[estado] += 1
+                cobertura_data.append({
+                    'Calle': calle, 
+                    'Cobertura %': pct, 
+                    'Color': COLORES_ESTADO[estado]
+                })
 
-    def get_top_5(data):
-        if data.empty: 
-            return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
-        try:
-            res = data.sort_values('DECIBELIOS', ascending=False)
-            res = res.drop_duplicates(subset=[c_id]).head(5)
-            return res[['Ubicación', 'DECIBELIOS', 'Instante']]
-        except:
-            return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
+            # Layout de dos columnas
+            col1, col2 = st.columns([1, 2])
+            
+            with col1:
+                st.write("Distribución de Salud")
+                fig_pie, ax_pie = plt.subplots(figsize=(5, 5))
+                # Filtrar estados sin datos para que no ensucien la tarta
+                labels = [k for k, v in salud_stats.items() if v > 0]
+                values = [v for k, v in salud_stats.items() if v > 0]
+                colors = [COLORES_ESTADO[l] for l in labels]
+                
+                ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90, textprops={'fontsize': 8})
+                st.pyplot(fig_pie)
 
-    c1, c2 = st.columns(2)
-    with c1:
-        st.write("☀️ Día")
-        df_dia = get_top_5(df_rank[df_rank['PERIODO'] == 'DIA'])
-        st.dataframe(df_dia, use_container_width=True, hide_index=True)
-    with c2:
-        st.write("🌙 Noche")
-        df_noche = get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE'])
-        st.dataframe(df_noche, use_container_width=True, hide_index=True)
+            with col2:
+                st.write("Ranking de Continuidad (Mejor a Peor)")
+                df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
+                fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
+                
+                bars = ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
+                ax_bar.set_xlabel("Porcentaje de Cobertura (%)", fontsize=9)
+                ax_bar.tick_params(axis='y', labelsize=8)
+                ax_bar.set_xlim(0, 105)
+                
+                # Añadir el número de porcentaje al final de cada barra
+                for bar in bars:
+                    width = bar.get_width()
+                    ax_bar.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center', fontsize=7)
+                
+                st.pyplot(fig_bar)
+        with tabs[1]:
+            sensores_con_datos = df_f[c_id].unique()
+            opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
+            if opciones_sensor:
+                sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
+                df_s = df_f[df_f[c_id] == sel_id]
+                st.markdown(f"### Ubicación: {SENSORES_ABANDO[sel_id]}")
+                delta_dias = (f_fin_dt - f_ini_dt).days
+                if delta_dias < 7:
+                    st.info("Visualización Unificada: Día (Naranja), Noche (Azul).")
+                    fig_uni = generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt)
+                    if fig_uni: st.pyplot(fig_uni)
+                else:
+                    st.info("Visualización por Periodos: Día y Noche independientes con misma escala.")
+                    fig_day = generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt)
+                    if fig_day: st.pyplot(fig_day)
+                    fig_night = generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt)
+                    if fig_night: st.pyplot(fig_night)
+            else:
+                st.warning("No hay datos para el rango seleccionado.")      
+        with tabs[2]:
+            st.subheader("Top 5 Impactos")
+            df_rank = df_f.copy()
+            if 'DECIBELIOS' not in df_rank.columns:
+                cols_numericas = df_rank.select_dtypes(include=['number']).columns
+                if len(cols_numericas) > 0:
+                    df_rank = df_rank.rename(columns={cols_numericas[0]: 'DECIBELIOS'})
+          
+            df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
+            df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
+            
+            def get_top_5(data):
+                if data.empty: return pd.DataFrame()
+                return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
+            
+            c1, c2 = st.columns(2)
+            with c1:
+                st.write("☀️ Día")
+                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == "DIA"]), use_container_width=True, hide_index=True)
+            with c2:
+                st.write("🌙 Noche")
+                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == "NOCHE"]), use_container_width=True, hide_index=True)
 
+    except Exception as e:
+        st.error(f"Error: {e}")
+        st.info("Asegúrate de que el archivo 'datos_sonometros.csv' esté en la misma carpeta.")
 if __name__ == "__main__":
     main()
