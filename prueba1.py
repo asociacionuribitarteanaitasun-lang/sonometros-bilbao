@@ -201,38 +201,41 @@ try:
     df_all['FECHA_DT'] = df_all[col_fecha]
     df_all['PERIODO'] = df_all['FECHA_DT'].apply(clasificar_periodo)
 
-    # --- 2. LÍMITES REALES ---
+  # --- 2. LÍMITES REALES Y SELECTOR ---
     f_min_real = df_all['FECHA_DT'].min().date()
-    f_max_real = df_all['FECHA_DT'].max().date()
+    # Guardamos f_max_real como objeto completo para mostrar la hora en el info
+    f_max_real_dt = df_all['FECHA_DT'].max() 
+    f_max_real_date = f_max_real_dt.date()
 
-except Exception as e:
-    st.error(f"Error crítico al leer el CSV: {e}")
-    st.stop()
-
-    # --- 3. FILTRO TEMPORAL ---
-    st.sidebar.header("🗓️ Filtro Temporal")
+    st.sidebar.subheader("📅 Filtro de Fechas")
     rango = st.sidebar.date_input(
-        "Selecciona el rango:",
-        value=(f_min_real.date(), f_max_real.date()),
-        min_value=f_min_real.date(),
-        max_value=f_max_real.date()
+        "Selecciona periodo:",
+        value=(f_min_real, f_max_real_date),
+        min_value=f_min_real,
+        max_value=f_max_real_date
     )
 
-    # --- 4. APLICAR FILTRO ---
+    # --- 3. EXTRACCIÓN Y FILTRADO ---
     if isinstance(rango, tuple) and len(rango) == 2:
         f_ini, f_fin = rango
-        # Usamos la columna detectada dinámicamente
-        mask = (df_all[col_fecha].dt.date >= f_ini) & (df_all[col_fecha].dt.date <= f_fin)
-        df_f = df_all.loc[mask]
     else:
-        df_f = df_all
+        f_ini, f_fin = f_min_real, f_max_real_date
 
-    st.sidebar.info(f"Última lectura: {f_max_real.strftime('%d/%m/%Y %H:%M')}")
+    # Convertimos a datetime para que la comparación sea exacta
+    f_ini_dt = pd.to_datetime(f_ini)
+    f_fin_dt = pd.to_datetime(f_fin).replace(hour=23, minute=59, second=59)
+    
+    mask = (df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)
+    df_f = df_all.loc[mask]
+
+    # Info de la última lectura en la barra lateral
+    st.sidebar.info(f"Última lectura: {f_max_real_dt.strftime('%d/%m/%Y %H:%M')}")
 
 except Exception as e:
-    st.error(f"❌ Error al procesar los datos: {e}")
-    st.stop()
-        # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
+    st.error(f"❌ Error crítico al procesar datos: {e}")
+    st.stop()       
+
+ # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
 tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
 
 with tabs[0]:
