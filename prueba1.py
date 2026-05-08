@@ -224,68 +224,72 @@ except Exception as e:
     st.error(f"❌ Error al procesar los datos: {e}")
     st.stop()
         # --- AQUÍ ESTÁN LAS FUNCIONALIDADES QUE TE FALTABAN ---
-        tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
+tabs = st.tabs(["📊 Integridad de la Red", "📈 Series Temporales", "🚩 Impactos Máximos"])
 
-        with tabs[0]:
-            col1, col2 = st.columns([1, 2])
-            dias_total = max((f_fin - f_ini).days + 1, 1)
-            esperados = dias_total * 96 
-            salud_stats = {'Óptimos': 0, 'Regulares': 0, 'Malos': 0, 'Sin Datos': 0}
-            cobertura_data = []
-            
-            for sid, calle in SENSORES_ABANDO.items():
-                actual = len(df_f[df_f[c_id] == sid])
-                pct = min((actual / esperados) * 100, 100.0)
-                estado = 'Óptimos' if pct > 90 else ('Regulares' if pct > 50 else ('Malos' if pct > 0 else 'Sin Datos'))
-                salud_stats[estado] += 1
-                cobertura_data.append({'Calle': calle, 'Cobertura %': pct, 'Color': COLORES_ESTADO[estado]})
+with tabs[0]:
+    col1, col2 = st.columns([1, 2])
+    dias_total = max((f_fin - f_ini).days + 1, 1)
+    esperados = dias_total * 96 
+    salud_stats = {'Óptimos': 0, 'Regulares': 0, 'Malos': 0, 'Sin Datos': 0}
+    cobertura_data = []
+    
+    for sid, calle in SENSORES_ABANDO.items():
+        # Usamos c_id y col_fecha que detectamos en el bloque de carga
+        actual = len(df_f[df_f[c_id] == sid])
+        pct = min((actual / esperados) * 100, 100.0)
+        estado = 'Óptimos' if pct > 90 else ('Regulares' if pct > 50 else ('Malos' if pct > 0 else 'Sin Datos'))
+        salud_stats[estado] += 1
+        cobertura_data.append({'Calle': calle, 'Cobertura %': pct, 'Color': COLORES_ESTADO[estado]})
 
-            with col1:
-                st.subheader("Estado de Integridad")
-                fig_pie, ax_pie = plt.subplots()
-                labels = [k for k, v in salud_stats.items() if v > 0]
-                values = [v for k, v in salud_stats.items() if v > 0]
-                ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=[COLORES_ESTADO[l] for l in labels], startangle=90)
-                st.pyplot(fig_pie)
+    with col1:
+        st.subheader("Estado de Integridad")
+        fig_pie, ax_pie = plt.subplots()
+        labels = [k for k, v in salud_stats.items() if v > 0]
+        values = [v for k, v in salud_stats.items() if v > 0]
+        if values:
+            ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=[COLORES_ESTADO[l] for l in labels], startangle=90)
+            st.pyplot(fig_pie)
 
-            with col2:
-                st.subheader("Continuidad por Sensor")
-                df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
-                fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
-                ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
-                ax_bar.set_xlabel("Cobertura (%)")
-                st.pyplot(fig_bar)
+    with col2:
+        st.subheader("Continuidad por Sensor")
+        if cobertura_data:
+            df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
+            fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
+            ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
+            ax_bar.set_xlabel("Cobertura (%)")
+            st.pyplot(fig_bar)
 
-        with tabs[1]:
-            sensores_con_datos = df_f[c_id].unique()
-            opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
-            if opciones_sensor:
-                sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
-                df_s = df_f[df_f[c_id] == sel_id]
-                delta_dias = (f_fin - f_ini).days
-                if delta_dias < 7:
-                    st.pyplot(generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt))
-                else:
-                    st.pyplot(generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt))
-                    st.pyplot(generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt))
+with tabs[1]:
+    sensores_con_datos = df_f[c_id].unique()
+    opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
+    if opciones_sensor:
+        sel_id = st.selectbox("Seleccionar Sensor:", opciones_sensor, format_func=lambda x: f"{SENSORES_ABANDO[x]} ({x})")
+        df_s = df_f[df_f[c_id] == sel_id]
+        delta_dias = (f_fin - f_ini).days
+        if delta_dias < 7:
+            st.pyplot(generar_grafico_unificado(df_s, f_ini_dt, f_fin_dt))
+        else:
+            st.pyplot(generar_grafico_periodo(df_s, "DIA", "#e67e22", 65, f_ini_dt, f_fin_dt))
+            st.pyplot(generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt))
 
-        with tabs[2]:
-            st.subheader("Top 5 Impactos Críticos")
-            df_rank = df_f.copy()
-            df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
-            df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
-            def get_top_5(data):
-                if data.empty: return pd.DataFrame()
-                return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
-            c1, c2 = st.columns(2)
-            with c1:
-                st.write("☀️ Día")
-                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'DIA']), use_container_width=True, hide_index=True)
-            with c2:
-                st.write("🌙 Noche")
-                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE']), use_container_width=True, hide_index=True)
-    else:
-        st.info("Dashboard listo. Cargue datos para comenzar.")
+with tabs[2]:
+    st.subheader("Top 5 Impactos Críticos")
+    df_rank = df_f.copy()
+    df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
+    # Usamos FECHA_DT que es la columna estandarizada que creamos en la carga
+    df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
+    
+    def get_top_5(data):
+        if data.empty: return pd.DataFrame()
+        return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
+    
+    c1, c2 = st.columns(2)
+    with c1:
+        st.write("☀️ Día")
+        st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'DIA']), use_container_width=True, hide_index=True)
+    with c2:
+        st.write("🌙 Noche")
+        st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == 'NOCHE']), use_container_width=True, hide_index=True)
 
 if __name__ == "__main__":
     main()
