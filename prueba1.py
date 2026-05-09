@@ -32,7 +32,7 @@ SENSORES_ABANDO = {
 }
 
 COLORES_ESTADO = {
-    'Óptimos': '#2ecc71', 'Incompletos': '#f1c40f', 'Deficientes': '#e67e22', 'Sin Datos': '#95a5a6'
+    'Óptimos': '#2ecc71', 'Regulares': '#f1c40f', 'Malos': '#e67e22', 'Sin Datos': '#95a5a6'
 }
 
 # --- FUNCIONES DE APOYO ---
