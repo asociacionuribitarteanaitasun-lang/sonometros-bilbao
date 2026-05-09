@@ -257,20 +257,18 @@ def main():
         with tabs[2]:
             st.subheader("Top 5 Impactos Críticos")
             
-            # Creamos la copia
+            # 1. Copia y limpieza de IDs
             df_rank = df_f.copy()
-            
-            # CORRECCIÓN DEL ERROR: Usamos .astype(str) y luego .str.upper()
-            # Esto evita el error "'Series' object has no attribute 'upper'"
             df_rank[c_id] = df_rank[c_id].astype(str).str.strip().str.upper()
             
-            # Mapeamos la ubicación
+            # 2. FILTRO DE SEGURIDAD (Opción A):
+            # Solo mantenemos los datos de los sensores que están en tu lista de Abando
+            df_rank = df_rank[df_rank[c_id].isin(SENSORES_ABANDO.keys())]
+            
+            # 3. Mapeamos la ubicación (ahora siempre encontrará pareja)
             df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
             
-            # Si no está en el diccionario, ponemos el ID original para que no salga "None"
-            df_rank['Ubicación'] = df_rank['Ubicación'].fillna(df_rank[c_id])
-            
-            # Formateamos la fecha para la tabla
+            # 4. Formato de fecha
             df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
             
             def get_top_5(data):
