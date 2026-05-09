@@ -27,12 +27,12 @@ SENSORES_ABANDO = {
     'BI-RUI-C016': 'DIPUTACIÓN 4', 'BI-RUI-C017': 'BERASTEGUI 4', 'BI-RUI-C018': 'LEDESMA 6',
     'BI-RUI-C019': 'LEDESMA 7', 'BI-RUI-C020': 'LEDESMA 10 bis', 'BI-RUI-C021': 'LEDESMA 30',
     'BI-RUI-C022': 'VILLARIAS 2', 'BI-RUI-C025': 'LUIS BRIÑAS', 'BI-RUI-C030': 'EGAÑA KALEA 6',
-    'BI-RUI-C031': 'EGAÑA KALEA 22', 'BI-RUI-C032': 'PARTICULAR INDAUTXU', 'BI-RUI-C033': 'MAESTRO GARCÍA RIVERO',
+    'BI-RUI-C031': 'EGAÑA KALEA 2', 'BI-RUI-C032': 'PARTICULAR INDAUTXU', 'BI-RUI-C033': 'MAESTRO GARCÍA RIVERO',
     'BI-RUI-C034': 'ARETXABALETA 6', 'BI-RUI-P009': 'ALAMEDA RECALDE'
 }
 
 COLORES_ESTADO = {
-    'Óptimos': '#2ecc71', 'Regulares': '#f1c40f', 'Malos': '#e67e22', 'Sin Datos': '#95a5a6'
+    'Óptimos': '#2ecc71', 'Incompletos': '#f1c40f', 'Deficientes': '#e67e22', 'Sin Datos': '#95a5a6'
 }
 
 # --- FUNCIONES DE APOYO ---
@@ -151,14 +151,20 @@ def main():
         rango = st.sidebar.date_input("Selecciona rango:", value=(f_min.date(), f_max.date()), min_value=f_min.date(), max_value=f_max.date())
         
         if isinstance(rango, tuple) and len(rango) == 2:
-            f_ini_dt = pd.to_datetime(rango[0])
-            f_fin_dt = pd.to_datetime(rango[1]).replace(hour=23, minute=59)
+            # Inicio: El mayor entre lo seleccionado y el primer dato que tenemos
+            sel_ini = pd.to_datetime(rango[0])
+            f_ini_dt = max(sel_ini, f_min) 
+            
+            # Fin: El menor entre el final del día seleccionado y el momento actual (ahora)
+            sel_fin = pd.to_datetime(rango[1]).replace(hour=23, minute=59, second=59)
+            ahora = datetime.now()
+            f_fin_dt = min(sel_fin, ahora)
+            
             df_f = df_all[(df_all['FECHA_DT'] >= f_ini_dt) & (df_all['FECHA_DT'] <= f_fin_dt)]
         else:
             df_f = df_all
-            f_ini_dt, f_fin_dt = f_min, f_max
-
-        # --- PESTAÑAS ---
+            f_ini_dt, f_fin_dt = f_min, f_max      
+  # --- PESTAÑAS ---
         tabs = st.tabs(["📊 Integridad", "📈 Gráficos", "🚩 Máximos"])
 
         with tabs[0]:
