@@ -162,60 +162,71 @@ def main():
         tabs = st.tabs(["📊 Integridad", "📈 Gráficos", "🚩 Máximos"])
 
         with tabs[0]:
-            st.subheader("Integridad y Calidad de la Red")
+            st.subheader("Control de Calidad y Salud de la Red")
             
-            # Cálculo de estadísticas
-            dias_total = max((f_fin_dt - f_ini_dt).days + 1, 1)
-            esperados = dias_total * 96  # 4 lecturas por hora
+            # 1. CÁLCULO PRECISO DE EXPECTATIVAS
+            # Calculamos las horas totales entre el inicio y el fin seleccionado
+            horas_totales = (f_fin_dt - f_ini_dt).total_seconds() / 3600
+            # Cada hora debe tener 4 lecturas (una cada 15 min)
+            esperados_total = int(horas_totales * 4)
+            
+            st.caption(f"Análisis desde {f_ini_dt.strftime('%d/%m %H:%M')} hasta {f_fin_dt.strftime('%d/%m %H:%M')} ({int(horas_totales)} horas evaluadas)")
+            
             salud_stats = {'Óptimos': 0, 'Regulares': 0, 'Malos': 0, 'Sin Datos': 0}
             cobertura_data = []
             
             for sid, calle in SENSORES_ABANDO.items():
-                actual = len(df_f[df_f[c_id] == sid])
-                pct = min((actual / esperados) * 100, 100.0)
+                df_sensor = df_f[df_f[c_id] == sid]
+                actual = len(df_sensor)
                 
+                # Cálculo de cobertura real basado en el tiempo exacto transcurrido
+                pct = min((actual / esperados_total) * 100, 100.0) if esperados_total > 0 else 0
+                
+                # Clasificación de salud
                 if pct > 90: estado = 'Óptimos'
                 elif pct > 50: estado = 'Regulares'
                 elif pct > 0: estado = 'Malos'
                 else: estado = 'Sin Datos'
                 
                 salud_stats[estado] += 1
+                
+                # Datos extra: ¿Cuántos hay de día y cuántos de noche?
+                lecturas_dia = len(df_sensor[df_sensor['PERIODO'] == 'DIA'])
+                lecturas_noche = len(df_sensor[df_sensor['PERIODO'] == 'NOCHE'])
+                
                 cobertura_data.append({
                     'Calle': calle, 
                     'Cobertura %': pct, 
+                    'Día': lecturas_dia,
+                    'Noche': lecturas_noche,
                     'Color': COLORES_ESTADO[estado]
                 })
 
-            # Layout de dos columnas
             col1, col2 = st.columns([1, 2])
-            
             with col1:
-                st.write("Distribución de Salud")
+                st.write("**Distribución de Calidad**")
                 fig_pie, ax_pie = plt.subplots(figsize=(5, 5))
-                # Filtrar estados sin datos para que no ensucien la tarta
                 labels = [k for k, v in salud_stats.items() if v > 0]
                 values = [v for k, v in salud_stats.items() if v > 0]
-                colors = [COLORES_ESTADO[l] for l in labels]
-                
-                ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=colors, startangle=90, textprops={'fontsize': 8})
+                ax_pie.pie(values, labels=labels, autopct='%1.1f%%', colors=[COLORES_ESTADO[l] for l in labels], startangle=90)
                 st.pyplot(fig_pie)
 
             with col2:
-                st.write("Ranking de Continuidad (Mejor a Peor)")
+                st.write("**Ranking de Integridad por Sensor**")
                 df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
+                
+                # Mostramos una tabla detallada para ver el desglose
+                st.dataframe(
+                    df_cob[['Calle', 'Cobertura %', 'Día', 'Noche']].sort_values('Cobertura %', ascending=False),
+                    hide_index=True, use_container_width=True
+                )
+                
+                # Gráfico de barras de cobertura
                 fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
-                
-                bars = ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
-                ax_bar.set_xlabel("Porcentaje de Cobertura (%)", fontsize=9)
-                ax_bar.tick_params(axis='y', labelsize=8)
+                ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
                 ax_bar.set_xlim(0, 105)
-                
-                # Añadir el número de porcentaje al final de cada barra
-                for bar in bars:
-                    width = bar.get_width()
-                    ax_bar.text(width + 1, bar.get_y() + bar.get_height()/2, f'{width:.1f}%', va='center', fontsize=7)
-                
-                st.pyplot(fig_bar)
+                ax_bar.set_xlabel("Integridad del flujo de datos (%)")
+                st.pyplot(fig_bar)      
         with tabs[1]:
             sensores_con_datos = df_f[c_id].unique()
             opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
@@ -235,32 +246,49 @@ def main():
                     fig_night = generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt)
                     if fig_night: st.pyplot(fig_night)
             else:
-                st.warning("No hay datos para el rango seleccionado.")      
+    
+                    st.warning("No hay datos para el rango seleccionado.")      
         with tabs[2]:
-            st.subheader("Top 5 Impactos")
+            st.subheader("Top 5 Impactos Críticos")
+            
+            # Creamos la copia
             df_rank = df_f.copy()
-            if 'DECIBELIOS' not in df_rank.columns:
-                cols_numericas = df_rank.select_dtypes(include=['number']).columns
-                if len(cols_numericas) > 0:
-                    df_rank = df_rank.rename(columns={cols_numericas[0]: 'DECIBELIOS'})
-          
+            
+            # CORRECCIÓN DEL ERROR: Usamos .astype(str) y luego .str.upper()
+            # Esto evita el error "'Series' object has no attribute 'upper'"
+            df_rank[c_id] = df_rank[c_id].astype(str).str.strip().str.upper()
+            
+            # Mapeamos la ubicación
             df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
+            
+            # Si no está en el diccionario, ponemos el ID original para que no salga "None"
+            df_rank['Ubicación'] = df_rank['Ubicación'].fillna(df_rank[c_id])
+            
+            # Formateamos la fecha para la tabla
             df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
             
             def get_top_5(data):
-                if data.empty: return pd.DataFrame()
-                return data.sort_values('DECIBELIOS', ascending=False).drop_duplicates(subset=[c_id]).head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
+                if data.empty: 
+                    return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
+                # Ordenar por ruido y quitar duplicados de sensor
+                return data.sort_values('DECIBELIOS', ascending=False)\
+                           .drop_duplicates(subset=[c_id])\
+                           .head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
             
             c1, c2 = st.columns(2)
             with c1:
                 st.write("☀️ Día")
-                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == "DIA"]), use_container_width=True, hide_index=True)
+                df_dia = get_top_5(df_rank[df_rank['PERIODO'] == "DIA"])
+                st.dataframe(df_dia, use_container_width=True, hide_index=True)
             with c2:
                 st.write("🌙 Noche")
-                st.dataframe(get_top_5(df_rank[df_rank['PERIODO'] == "NOCHE"]), use_container_width=True, hide_index=True)
+                df_noche = get_top_5(df_rank[df_rank['PERIODO'] == "NOCHE"])
+                st.dataframe(df_noche, use_container_width=True, hide_index=True)
 
     except Exception as e:
         st.error(f"Error: {e}")
         st.info("Asegúrate de que el archivo 'datos_sonometros.csv' esté en la misma carpeta.")
+
 if __name__ == "__main__":
-    main()
+    main()     
+        
