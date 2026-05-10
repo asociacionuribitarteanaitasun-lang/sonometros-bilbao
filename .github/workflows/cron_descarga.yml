@@ -8,6 +8,9 @@ on:
 jobs:
   descarga:
     runs-on: ubuntu-latest
+    # AÑADE ESTAS DOS LÍNEAS AQUÍ:
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     steps:
       - name: Checkout de la carpeta
         uses: actions/checkout@v4
