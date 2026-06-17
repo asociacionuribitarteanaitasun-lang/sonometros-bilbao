@@ -289,6 +289,9 @@ def main():
                 df_noche = get_top_5(df_rank[df_rank['PERIODO'] == "NOCHE"])
                 st.dataframe(df_noche, use_container_width=True, hide_index=True)
 
+            st.sidebar.markdown("---")
+            st.sidebar.markdown("© 2026 **Asociación de Vecinos de Abando**")
+            st.sidebar.markdown("Desarrollado con fines de auditoría acústica vecinal de código abierto ([Licencia MIT](https://opensource.org/licenses/MIT)).")
     except Exception as e:
         st.error(f"Error: {e}")
         st.info("Asegúrate de que el archivo 'datos_sonometros.csv' esté en la misma carpeta.")
