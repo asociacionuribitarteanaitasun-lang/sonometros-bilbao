@@ -53,8 +53,6 @@ hide_and_custom_footer = """
 """
 st.markdown(hide_and_custom_footer, unsafe_allow_html=True)
 
-
-
 SENSORES_ABANDO = {
     'BI-RUI-001': 'RODRIGUEZ ARIAS 71bis', 'BI-RUI-020': 'POZA 48', 'BI-RUI-021': 'POZA 53',
     'BI-RUI-022': 'POZA 30', 'BI-RUI-025': 'PRINCIPE 1', 'BI-RUI-BR15': 'ALAMEDA URQUIJO',
@@ -83,6 +81,7 @@ def es_dia_especial(dt):
     if fecha_hoy in festivos_euskadi or fecha_manana in festivos_euskadi or dt.weekday() in [4, 5, 6]:
         return True
     return False
+
 # --- MOTOR GRÁFICO ---
 def aplicar_estetica_ejes(ax, titulo, f_ini, f_fin, ylabel="dB(A)"):
     ax.set_title(titulo, fontsize=10, fontweight='bold', pad=10)
@@ -93,7 +92,6 @@ def aplicar_estetica_ejes(ax, titulo, f_ini, f_fin, ylabel="dB(A)"):
     ax.tick_params(labelsize=8)
 
 def sombrear_especiales(ax, f_ini, f_fin):
-    """Dibuja las franjas grises en findes y festivos."""
     curr = f_ini.replace(hour=0, minute=0, second=0, microsecond=0)
     while curr <= f_fin:
         if es_dia_especial(curr):
@@ -104,7 +102,6 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
     fig, ax = plt.subplots(figsize=(12, 5))
     df_p = df_sel.sort_values('FECHA_DT')
     
-    # Sombreado de fondos
     sombrear_especiales(ax, f_ini, f_fin)
     
     if not df_p.empty:
@@ -112,7 +109,6 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
         valores = df_p['DECIBELIOS'].values
         periodos = df_p['PERIODO'].values
         
-        # Dibujo por segmentos para evitar líneas locas y poner colores
         for i in range(len(tiempos) - 1):
             t1, t2 = tiempos[i], tiempos[i+1]
             v1, v2 = valores[i], valores[i+1]
@@ -120,11 +116,10 @@ def generar_grafico_unificado(df_sel, f_ini, f_fin):
             
             diff = (t2 - t1).astype('timedelta64[m]').astype(int)
             
-            if diff <= 20: # Si hay hueco de más de 20min, no dibuja línea
+            if diff <= 20:
                 color = '#e67e22' if p1 == "DIA" else '#2980b9'
                 ax.plot([t1, t2], [v1, v2], color=color, linewidth=1.2, alpha=0.8)
     
-    # Leyendas y límites
     ax.plot([], [], color='#e67e22', label="Nivel Día")
     ax.plot([], [], color='#2980b9', label="Nivel Noche")
     ax.axhline(65, color='red', linestyle='--', linewidth=0.8, alpha=0.5, label="Límite Día (65dB)")
@@ -166,7 +161,7 @@ def generar_grafico_periodo(df_sel, periodo, color, limite, f_ini, f_fin):
 
 # --- APP PRINCIPAL ---
 def main():
-    st.title("🔊 Auditoría Acústica Bilbao - Distrito Abando")
+    st.title("🔊 Auditoría Acústica de Abando")
 
     try:
         # 1. Carga de datos
@@ -189,11 +184,9 @@ def main():
         rango = st.sidebar.date_input("Selecciona rango:", value=(f_min.date(), f_max.date()), min_value=f_min.date(), max_value=f_max.date())
         
         if isinstance(rango, tuple) and len(rango) == 2:
-            # Inicio: El mayor entre lo seleccionado y el primer dato que tenemos
             sel_ini = pd.to_datetime(rango[0])
             f_ini_dt = max(sel_ini, f_min) 
             
-            # Fin: El menor entre el final del día seleccionado y el momento actual (ahora)
             sel_fin = pd.to_datetime(rango[1]).replace(hour=23, minute=59, second=59)
             ahora = datetime.now()
             f_fin_dt = min(sel_fin, ahora)
@@ -202,16 +195,14 @@ def main():
         else:
             df_f = df_all
             f_ini_dt, f_fin_dt = f_min, f_max      
-  # --- PESTAÑAS ---
+        
+        # --- PESTAÑAS ---
         tabs = st.tabs(["📊 Integridad", "📈 Gráficos", "🚩 Máximos"])
 
         with tabs[0]:
             st.subheader("Control de Calidad y Salud de la Red")
             
-            # 1. CÁLCULO PRECISO DE EXPECTATIVAS
-            # Calculamos las horas totales entre el inicio y el fin seleccionado
             horas_totales = (f_fin_dt - f_ini_dt).total_seconds() / 3600
-            # Cada hora debe tener 4 lecturas (una cada 15 min)
             esperados_total = int(horas_totales * 4)
             
             st.caption(f"Análisis desde {f_ini_dt.strftime('%d/%m %H:%M')} hasta {f_fin_dt.strftime('%d/%m %H:%M')} ({int(horas_totales)} horas evaluadas)")
@@ -223,10 +214,8 @@ def main():
                 df_sensor = df_f[df_f[c_id] == sid]
                 actual = len(df_sensor)
                 
-                # Cálculo de cobertura real basado en el tiempo exacto transcurrido
                 pct = min((actual / esperados_total) * 100, 100.0) if esperados_total > 0 else 0
                 
-                # Clasificación de salud
                 if pct > 90: estado = 'Óptimos'
                 elif pct > 50: estado = 'Regulares'
                 elif pct > 0: estado = 'Malos'
@@ -234,7 +223,6 @@ def main():
                 
                 salud_stats[estado] += 1
                 
-                # Datos extra: ¿Cuántos hay de día y cuántos de noche?
                 lecturas_dia = len(df_sensor[df_sensor['PERIODO'] == 'DIA'])
                 lecturas_noche = len(df_sensor[df_sensor['PERIODO'] == 'NOCHE'])
                 
@@ -259,18 +247,17 @@ def main():
                 st.write("**Ranking de Integridad por Sensor**")
                 df_cob = pd.DataFrame(cobertura_data).sort_values('Cobertura %', ascending=True)
                 
-                # Mostramos una tabla detallada para ver el desglose
                 st.dataframe(
                     df_cob[['Calle', 'Cobertura %', 'Día', 'Noche']].sort_values('Cobertura %', ascending=False),
                     hide_index=True, use_container_width=True
                 )
                 
-                # Gráfico de barras de cobertura
                 fig_bar, ax_bar = plt.subplots(figsize=(10, 8))
                 ax_bar.barh(df_cob['Calle'], df_cob['Cobertura %'], color=df_cob['Color'])
                 ax_bar.set_xlim(0, 105)
                 ax_bar.set_xlabel("Integridad del flujo de datos (%)")
                 st.pyplot(fig_bar)      
+
         with tabs[1]:
             sensores_con_datos = df_f[c_id].unique()
             opciones_sensor = [sid for sid in SENSORES_ABANDO.keys() if sid in sensores_con_datos]
@@ -290,29 +277,20 @@ def main():
                     fig_night = generar_grafico_periodo(df_s, "NOCHE", "#2980b9", 55, f_ini_dt, f_fin_dt)
                     if fig_night: st.pyplot(fig_night)
             else:
-    
-                    st.warning("No hay datos para el rango seleccionado.")      
+                st.warning("No hay datos para el rango seleccionado.")      
+
         with tabs[2]:
             st.subheader("Top 5 Impactos Críticos")
             
-            # 1. Copia y limpieza de IDs
             df_rank = df_f.copy()
             df_rank[c_id] = df_rank[c_id].astype(str).str.strip().str.upper()
-            
-            # 2. FILTRO DE SEGURIDAD (Opción A):
-            # Solo mantenemos los datos de los sensores que están en tu lista de Abando
             df_rank = df_rank[df_rank[c_id].isin(SENSORES_ABANDO.keys())]
-            
-            # 3. Mapeamos la ubicación (ahora siempre encontrará pareja)
             df_rank['Ubicación'] = df_rank[c_id].map(SENSORES_ABANDO)
-            
-            # 4. Formato de fecha
             df_rank['Instante'] = df_rank['FECHA_DT'].dt.strftime('%d/%m %H:%M')
             
             def get_top_5(data):
                 if data.empty: 
                     return pd.DataFrame(columns=['Ubicación', 'DECIBELIOS', 'Instante'])
-                # Ordenar por ruido y quitar duplicados de sensor
                 return data.sort_values('DECIBELIOS', ascending=False)\
                            .drop_duplicates(subset=[c_id])\
                            .head(5)[['Ubicación', 'DECIBELIOS', 'Instante']]
@@ -327,13 +305,22 @@ def main():
                 df_noche = get_top_5(df_rank[df_rank['PERIODO'] == "NOCHE"])
                 st.dataframe(df_noche, use_container_width=True, hide_index=True)
 
-            st.sidebar.markdown("---")
-            st.sidebar.markdown("© 2026 **Asociación de Vecinos de Abando**")
-            st.sidebar.markdown("Desarrollado con fines de auditoría acústica vecinal de código abierto ([Licencia MIT](https://opensource.org/licenses/MIT)).")
+        # --- BARRA LATERAL ---
+        st.sidebar.markdown("---")
+        st.sidebar.markdown("© 2026 **Asociación Vecinal Uribitarte Anaitasuna**")
+        st.sidebar.markdown("Desarrollado con fines de auditoría acústica vecinal de código abierto ([Licencia MIT](https://opensource.org/licenses/MIT)).")
+
     except Exception as e:
         st.error(f"Error: {e}")
         st.info("Asegúrate de que el archivo 'datos_sonometros.csv' esté en la misma carpeta.")
 
+    # --- PIE DE PÁGINA PRINCIPAL ---
+    st.markdown("""
+        <div class="custom-footer">
+            © 2026 Asociación Vecinal Uribitarte Anaitasuna<br>
+            Desarrollado con fines de auditoría acústica vecinal de código abierto (Licencia MIT).
+        </div>
+    """, unsafe_allow_html=True)
+
 if __name__ == "__main__":
-    main()     
-        
+    main()
