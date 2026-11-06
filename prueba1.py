@@ -11,11 +11,49 @@ import unicodedata
 festivos_euskadi = holidays.Spain(subdiv='PV')
 festivos_euskadi.append({"2026-08-28": "Viernes Grande Bilbao"})
 
+# 1. Configuración de la pestaña del navegador (SIEMPRE PRIMERO)
 st.set_page_config(
-    page_title="Auditoría Acústica Bilbao - Abando", 
+    page_title="Auditoría Acústica de Abando", 
     page_icon="🔊",
     layout="wide"
 )
+
+# 2. CSS Reforzado: Ocultar barra superior, menú y firma de usuario en móviles
+hide_and_custom_footer = """
+    <style>
+    /* Ocultar la barra de navegación superior completa */
+    div[data-testid="stHeader"] {
+        display: none !important;
+    }
+    
+    /* Ocultar menú de 3 puntos y firma de usuario */
+    #MainMenu, header, footer, div[data-testid="stToolbar"] {
+        visibility: hidden !important;
+        display: none !important;
+    }
+    
+    /* Ocultar el espacio en blanco de la cabecera en móviles */
+    .block-container {
+        padding-top: 1.5rem !important;
+    }
+    
+    /* Estilo para el pie de página personalizado */
+    .custom-footer {
+        position: relative;
+        padding: 20px 0px 10px 0px;
+        margin-top: 40px;
+        border-top: 1px solid #d1d5db;
+        text-align: center;
+        font-size: 0.85rem;
+        color: #4b5563;
+        line-height: 1.5;
+        width: 100%;
+    }
+    </style>
+
+st.markdown(hide_and_custom_footer, unsafe_allow_html=True)
+
+
 
 SENSORES_ABANDO = {
     'BI-RUI-001': 'RODRIGUEZ ARIAS 71bis', 'BI-RUI-020': 'POZA 48', 'BI-RUI-021': 'POZA 53',
