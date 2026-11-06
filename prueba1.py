@@ -50,7 +50,7 @@ hide_and_custom_footer = """
         width: 100%;
     }
     </style>
-
+"""
 st.markdown(hide_and_custom_footer, unsafe_allow_html=True)
 
 
