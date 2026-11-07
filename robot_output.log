@@ -435,3 +435,18 @@ Iniciando descarga de datos...
 
 --- 3. Subiendo a GitHub ---
 --- ¡PROCESO FINALIZADO CON ÉXITO! ---
+--- 1. Entrando en la carpeta ---
+--- 2. Descargando datos nuevos ---
+
+--- 3. Subiendo a GitHub ---
+--- ¡PROCESO FINALIZADO CON ÉXITO! ---
+--- 1. Entrando en la carpeta ---
+--- 2. Descargando datos nuevos ---
+/Users/lourdes/Library/Python/3.9/lib/python/site-packages/urllib3/__init__.py:35: NotOpenSSLWarning: urllib3 v2 only supports OpenSSL 1.1.1+, currently the 'ssl' module is compiled with 'LibreSSL 2.8.3'. See: https://github.com/urllib3/urllib3/issues/3020
+  warnings.warn(
+/Users/lourdes/Library/Python/3.9/lib/python/site-packages/urllib3/connectionpool.py:1097: InsecureRequestWarning: Unverified HTTPS request is being made to host 'www.bilbao.eus'. Adding certificate verification is strongly advised. See: https://urllib3.readthedocs.io/en/latest/advanced-usage.html#tls-warnings
+  warnings.warn(
+Iniciando descarga de datos...
+¡Éxito! Archivo creado.
+--- 3. Subiendo a GitHub ---
+--- ¡PROCESO FINALIZADO CON ÉXITO! ---

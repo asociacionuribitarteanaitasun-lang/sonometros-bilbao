@@ -187,3 +187,12 @@ fatal: not a git repository (or any of the parent directories): .git
 fatal: not a git repository (or any of the parent directories): .git
 fatal: not a git repository (or any of the parent directories): .git
 fatal: not a git repository (or any of the parent directories): .git
+fatal: not in a git directory
+fatal: not in a git directory
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: not a git repository (or any of the parent directories): .git
+fatal: bad revision 'HEAD'
+fatal: cannot lock ref 'HEAD': unable to resolve reference 'refs/heads/main': Resource deadlock avoided
+fatal: unable to access 'https://github.com/asociacionuribitarteanaitasun-lang/sonometros-bilbao.git/': Failed to connect to github.com port 443 after 938053 ms: Timeout was reached

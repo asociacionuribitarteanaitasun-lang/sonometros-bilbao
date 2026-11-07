@@ -1,33 +1,31 @@
 #!/bin/bash
+set -e
 
-# 1. Entrando en la carpeta
+# Directorio de trabajo
+DIR="$HOME/sonometrosbilbao"
+
 echo "--- 1. Entrando en la carpeta ---"
-cd "/Users/lourdes/Library/CloudStorage/OneDrive-Personal/Deusto/2025/Primero/Curso-IA/Trabajos/sonometrosbilbao" || exit 1
+cd "$DIR" || exit 1
 
-# 2. Descargando datos nuevos
 echo "--- 2. Descargando datos nuevos ---"
-# Ejecutamos python y guardamos su resultado en una variable
-SALIDA_PYTHON=$(/usr/bin/python3 script_descarga.py 2>&1)
-echo "$SALIDA_PYTHON"
+/usr/bin/python3 "$DIR/script_descarga.py"
 
-# SI EN EL TEXTO DICE "Error del servidor", DETENEMOS EL SCRIPT AQUÍ
-if echo "$SALIDA_PYTHON" | grep -q "Error del servidor"; then
-    echo "❌ Descarga fallida debido al servidor de Bilbao. Abortando subida a GitHub."
+echo "--- 3. Subiendo a GitHub ---"
+if [ -d "$DIR/.git" ]; then
+    /usr/bin/git add datos_sonometros.csv
+    
+    # Realizar commit solo si hay diferencias detectadas en el CSV
+    if ! /usr/bin/git diff --cached --quiet; then
+        /usr/bin/git commit -m "Update automático: $(date)"
+        /usr/bin/git pull --rebase origin main
+        /usr/bin/git push origin main
+        echo "--- Datos subidos a GitHub correctamente ---"
+    else
+        echo "No hay datos nuevos para actualizar en GitHub."
+    fi
+else
+    echo "Error: $DIR no es un repositorio Git válido."
     exit 1
 fi
 
-# 3. Subiendo a GitHub
-echo "--- 3. Subiendo a GitHub ---"
-/usr/bin/git config user.name "Lourdes"
-/usr/bin/git config user.email "l.llorens@opendeusto.es" 
-
-/usr/bin/git add datos_sonometros.csv
-
-# Comprobamos si realmente hay cambios que subir para evitar el mensaje molesto de Git
-if /usr/bin/git diff-index --quiet HEAD --; then
-    echo "ℹ️ No hay datos nuevos que actualizar (el archivo es idéntico al de GitHub)."
-else
-    /usr/bin/git commit -m "Update automático: $(date)"
-    /usr/bin/git push origin main
-    echo "--- ¡PROCESO FINALIZADO CON ÉXITO! ---"
-fi
+echo "--- ¡PROCESO FINALIZADO CON ÉXITO! ---"
